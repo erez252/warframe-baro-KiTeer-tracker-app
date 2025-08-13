@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baro Ki'Teer Tracker</title>
+    <!-- Use a modern font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #1a202c; /* Dark background color */
+            background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+            color: #e2e8f0; /* Light text color */
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .item-card {
+            background-color: rgba(45, 55, 72, 0.5); /* Semi-transparent background */
+            backdrop-filter: blur(10px); /* Blur effect for transparency */
+            transition: all 0.2s ease-in-out;
+        }
+        .details-trigger-new {
+            cursor: pointer;
+        }
+
+        .item-card.owned {
+            border-color: #4ade80; /* Green border for owned items */
+        }
+        .item-card.wishlisted {
+            border-color: #fca5a5; /* Red border for wishlisted items */
+        }
+        .filter-checkbox:checked + span, .group-radio:checked + span {
+            background-color: #38bdf8; /* bg-sky-400 */
+            color: #1f2937; /* text-gray-900 */
+        }
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(5px);
+        }
+        .message-box {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 60; /* Higher than modal */
+        }
+        .owned-input-group input {
+            -moz-appearance: textfield;
+        }
+        .owned-input-group input::-webkit-outer-spin-button,
+        .owned-input-group input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        /* Custom scrollbar for the dates list */
+        .dates-scroll-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .dates-scroll-container::-webkit-scrollbar-track {
+            background: #2d3748;
+            border-radius: 10px;
+        }
+        .dates-scroll-container::-webkit-scrollbar-thumb {
+            background: #4a5568;
+            border-radius: 10px;
+        }
+        .dates-scroll-container::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+        
+        .collapsible-header {
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.2s;
+        }
+        .collapsible-header:hover {
+            color: #38bdf8;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col p-4 md:p-8">
+
+    <!-- Message Box for user feedback -->
+    <div id="message-box" class="message-box bg-gray-900 border border-gray-700 text-gray-200 p-4 rounded-lg shadow-xl max-w-sm hidden">
+        <p id="message-text"></p>
+        <button id="close-message" class="absolute top-1 right-2 text-gray-400 hover:text-white">&times;</button>
+    </div>
+
+    <div class="container mx-auto flex-grow">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold mb-2 text-sky-400 drop-shadow-lg">Baro Ki'Teer Item History</h1>
+            <p class="text-gray-400">A look back at everything Baro has sold, ever.</p>
+        </header>
+        
+        <!-- New Baro Status Section -->
+        <div id="baro-status" class="text-center p-4 rounded-xl shadow-lg mb-8">
+            <!-- Content will be populated by JavaScript -->
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="text-center py-10">
+            <svg class="animate-spin h-10 w-10 text-sky-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-4 text-gray-400">Fetching Baro's inventory...</p>
+        </div>
+        
+        <!-- Controls Section -->
+        <div id="controls" class="hidden p-6 rounded-xl shadow-lg bg-gray-800">
+            <!-- Main Header and Stats Button -->
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 space-y-4 md:space-y-0">
+                <h2 class="text-2xl font-bold text-sky-400">Inventory Controls</h2>
+                <button id="toggleStatsBtn" class="px-6 py-2 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 transition duration-300">
+                    My Stats
+                </button>
+            </div>
+
+            <!-- Sorting & Search Section (Always Open) -->
+            <div class="p-4 bg-gray-700 rounded-lg mb-4">
+                <h3 class="text-xl font-bold text-gray-200 mb-4">Sorting & Search</h3>
+                <div class="flex flex-wrap gap-2 mb-4">
+                    <span class="text-gray-300 font-semibold mr-2">Sort by:</span>
+                    <button data-sort-key="lastSeen" class="sort-btn bg-gray-600 hover:bg-gray-500 text-gray-200 font-bold py-2 px-4 rounded-full transition-colors duration-200 active:scale-95">
+                        Last Seen <span class="sort-icon ml-1">↓</span>
+                    </button>
+                    <button data-sort-key="itemName" class="sort-btn bg-gray-600 hover:bg-gray-500 text-gray-200 font-bold py-2 px-4 rounded-full transition-colors duration-200 active:scale-95">
+                        Name <span class="sort-icon ml-1"></span>
+                    </button>
+                    <button data-sort-key="credits" class="sort-btn bg-gray-600 hover:bg-gray-500 text-gray-200 font-bold py-2 px-4 rounded-full transition-colors duration-200 active:scale-95">
+                        Credits <span class="sort-icon ml-1"></span>
+                    </button>
+                    <button data-sort-key="ducats" class="sort-btn bg-gray-600 hover:bg-gray-500 text-gray-200 font-bold py-2 px-4 rounded-full transition-colors duration-200 active:scale-95">
+                        Ducats <span class="sort-icon ml-1"></span>
+                    </button>
+                </div>
+                <!-- Search Bar -->
+                <div>
+                    <input type="text" id="search-bar" placeholder="Search by name, type, or subtype..." class="w-full p-3 rounded-lg bg-gray-600 text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-400 transition-colors duration-200">
+                </div>
+            </div>
+
+            <!-- Filtering Options Section (Collapsible) -->
+            <div class="p-4 bg-gray-700 rounded-lg mb-4">
+                <div id="filterToggle" class="collapsible-header flex items-center justify-between text-xl font-bold text-gray-200">
+                    <h3>Filtering Options</h3>
+                    <span id="filterToggleIcon" class="ml-2">▼</span>
+                </div>
+                <div id="filterMenu" class="mt-4 hidden space-y-4">
+                    <!-- Owned/Unowned/Wishlist Items Filter -->
+                    <div class="flex flex-col space-y-2">
+                        <span class="text-gray-300 font-semibold">Filter by Status:</span>
+                        <div class="flex flex-wrap gap-2">
+                            <label class="cursor-pointer flex items-center space-x-2">
+                                <input type="checkbox" id="showOwnedItemsFilter" class="peer sr-only" checked>
+                                <div class="relative w-5 h-5 rounded border-2 border-gray-500 bg-gray-800 flex items-center justify-center transition-all duration-200 peer-checked:bg-sky-400 peer-checked:border-sky-400">
+                                    <svg class="absolute w-4 h-4 text-gray-900 opacity-0 transition-opacity duration-200 peer-checked:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                </div>
+                                <span class="text-gray-300 font-semibold">Show Owned</span>
+                            </label>
+                            <label class="cursor-pointer flex items-center space-x-2">
+                                <input type="checkbox" id="showUnownedItemsFilter" class="peer sr-only" checked>
+                                <div class="relative w-5 h-5 rounded border-2 border-gray-500 bg-gray-800 flex items-center justify-center transition-all duration-200 peer-checked:bg-sky-400 peer-checked:border-sky-400">
+                                    <svg class="absolute w-4 h-4 text-gray-900 opacity-0 transition-opacity duration-200 peer-checked:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                </div>
+                                <span class="text-gray-300 font-semibold">Show Unowned</span>
+                            </label>
+                            <label class="cursor-pointer flex items-center space-x-2">
+                                <input type="checkbox" id="showWishlistItemsFilter" class="peer sr-only" checked>
+                                <div class="relative w-5 h-5 rounded border-2 border-gray-500 bg-gray-800 flex items-center justify-center transition-all duration-200 peer-checked:bg-sky-400 peer-checked:border-sky-400">
+                                    <svg class="absolute w-4 h-4 text-gray-900 opacity-0 transition-opacity duration-200 peer-checked:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                </div>
+                                <span class="text-gray-300 font-semibold">Show Wishlist</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Item Type Filter -->
+                    <div class="flex flex-col space-y-2">
+                        <div class="flex items-center justify-between">
+                             <span class="text-gray-300 font-semibold">Filter by Type:</span>
+                             <div class="flex flex-wrap gap-2">
+                                 <button id="selectAllTypes" class="py-1 px-3 rounded-full text-xs font-medium text-gray-200 bg-gray-600 hover:bg-gray-500 transition-colors duration-200">Select All</button>
+                                 <button id="selectNoneTypes" class="py-1 px-3 rounded-full text-xs font-medium text-gray-200 bg-gray-600 hover:bg-gray-500 transition-colors duration-200">Select None</button>
+                                 <button id="resetTypes" class="py-1 px-3 rounded-full text-xs font-medium text-gray-200 bg-gray-600 hover:bg-gray-500 transition-colors duration-200">Reset to Default</button>
+                             </div>
+                         </div>
+                        <div id="itemTypeFiltersContainer" class="flex flex-wrap gap-2">
+                            <!-- Item type checkboxes will be dynamically added here -->
+                        </div>
+                    </div>
+
+                    <!-- Advanced Subtype Filter -->
+                    <div>
+                        <button id="advancedFilterToggle" class="flex items-center text-gray-300 font-semibold hover:text-sky-400 transition-colors duration-200">
+                            Advanced Subtypes <span id="toggleIcon" class="ml-2">▼</span>
+                        </button>
+                        <div id="advancedFiltersMenu" class="mt-2 hidden">
+                            <div class="flex flex-wrap gap-2 mb-2">
+                                <button id="selectAllSubtypes" class="py-1 px-3 rounded-full text-xs font-medium text-gray-200 bg-gray-600 hover:bg-gray-500 transition-colors duration-200">Select All</button>
+                                <button id="selectNoneSubtypes" class="py-1 px-3 rounded-full text-xs font-medium text-gray-200 bg-gray-600 hover:bg-gray-500 transition-colors duration-200">Select None</button>
+                            </div>
+                            <span class="text-gray-400 text-sm block mb-1">Filter by Subtype:</span>
+                            <div id="itemSubTypeFiltersContainer" class="flex flex-wrap gap-2 p-4 bg-gray-800 rounded-lg">
+                                <!-- Subtype checkboxes will be dynamically added here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grouping Section (Collapsible) -->
+            <div class="p-4 bg-gray-700 rounded-lg">
+                <div id="groupToggle" class="collapsible-header flex items-center justify-between text-xl font-bold text-gray-200">
+                    <h3>Grouping Options</h3>
+                    <span id="groupToggleIcon" class="ml-2">▼</span>
+                </div>
+                <div id="groupMenu" class="mt-4 hidden">
+                    <span class="text-gray-300 font-semibold">Group by:</span>
+                    <div class="flex flex-wrap gap-2 mt-2">
+                        <label class="cursor-pointer">
+                            <input type="radio" name="group-by" value="none" checked class="group-radio hidden">
+                            <span class="inline-block py-1 px-3 rounded-full text-gray-300 bg-gray-600 transition-colors duration-200">None</span>
+                        </label>
+                        <label class="cursor-pointer">
+                            <input type="radio" name="group-by" value="lastSeen" class="group-radio hidden">
+                            <span class="inline-block py-1 px-3 rounded-full text-gray-300 bg-gray-600 transition-colors duration-200">Last Seen</span>
+                        </label>
+                        <label class="cursor-pointer">
+                            <input type="radio" name="group-by" value="itemType" class="group-radio hidden">
+                            <span class="inline-block py-1 px-3 rounded-full text-gray-300 bg-gray-600 transition-colors duration-200">Main Type</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Items Grid -->
+        <div id="items-grid" class="mt-8">
+            <!-- Items will be injected here by JavaScript -->
+        </div>
+
+        <!-- My Stats container -->
+        <div id="statsContainer" class="p-8 bg-gray-900 rounded-2xl shadow-2xl mt-8 border-2 border-gray-700 hidden">
+            <div class="flex justify-between items-center mb-8">
+                <h2 class="text-4xl md:text-5xl font-bold text-sky-400 drop-shadow-lg">My Collection Stats</h2>
+                <button id="backToInventoryBtn" class="px-6 py-2 bg-gray-700 text-white font-semibold rounded-lg shadow-md hover:bg-gray-600 transition duration-300">
+                    Back to Inventory
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Total Value Card - Takes up a larger space -->
+                <div class="lg:col-span-1 p-8 rounded-2xl bg-gradient-to-br from-indigo-900 to-purple-900 shadow-xl flex flex-col justify-center text-center text-white relative overflow-hidden">
+                    <div class="absolute inset-0 bg-contain bg-no-repeat bg-right-bottom opacity-10" style="background-image: url('https://placehold.co/200x200/ffffff/ffffff?text=Baro')"></div>
+                    <h3 class="text-2xl font-bold mb-4 z-10">Total Collection Value</h3>
+                    <div class="z-10">
+                        <p class="text-5xl font-extrabold mb-2 text-yellow-400"><span id="totalDucats" class="drop-shadow-lg">0</span></p>
+                        <p class="text-xl text-yellow-200 mb-4 uppercase tracking-wider">Ducats</p>
+                        <p class="text-5xl font-extrabold text-gray-300"><span id="totalCredits" class="drop-shadow-lg">0</span></p>
+                        <p class="text-xl text-gray-400 uppercase tracking-wider">Credits</p>
+                    </div>
+                </div>
+
+                <!-- Item Breakdown & Progress -->
+                <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Item Breakdown Card -->
+                    <div class="p-6 rounded-2xl bg-gray-800 shadow-xl border border-gray-700">
+                        <h3 class="text-xl font-bold text-sky-300 mb-4">Item Breakdown</h3>
+                        <div class="flex flex-col space-y-2 mb-4">
+                            <p class="text-4xl font-extrabold text-white"><span id="totalOwnedItems">0</span> <span class="text-2xl font-semibold text-gray-400">total items owned</span></p>
+                            <p class="text-xl font-extrabold text-white"><span id="totalUniqueItems">0</span> <span class="text-lg font-semibold text-gray-400">unique items owned</span></p>
+                        </div>
+                        <ul id="itemBreakdownList" class="mt-4 space-y-2 text-gray-300">
+                            <!-- Breakdown list items will be inserted here -->
+                        </ul>
+                    </div>
+                    
+                    <!-- Collection Progress Card -->
+                    <div class="p-6 rounded-2xl bg-gray-800 shadow-xl border border-gray-700">
+                        <h3 class="text-xl font-bold text-sky-300 mb-4">Collection Progress</h3>
+                        <div class="flex items-center justify-between mb-2">
+                             <p class="text-lg font-medium text-white">Overall:</p>
+                             <p class="text-2xl font-bold text-sky-400"><span id="totalProgress">0%</span></p>
+                        </div>
+                        <div class="w-full h-2 bg-gray-700 rounded-full mb-4">
+                            <div id="totalProgressBar" class="h-full bg-sky-400 rounded-full transition-all duration-500" style="width: 0%;"></div>
+                        </div>
+                        <ul id="progressBreakdownList" class="space-y-2 text-gray-300 text-sm">
+                            <!-- Progress bars by type will be inserted here -->
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Wishlist Stats Card -->
+                <div class="lg:col-span-1 p-6 rounded-2xl bg-gray-800 shadow-xl border border-gray-700">
+                    <h3 class="text-xl font-bold text-red-400 mb-4">Wishlist Stats</h3>
+                    <div class="flex flex-col space-y-2">
+                        <p class="text-4xl font-extrabold text-white"><span id="totalWishlistItems">0</span> <span class="text-2xl font-semibold text-gray-400">items to get</span></p>
+                        <p class="text-xl font-extrabold text-white"><span id="ownedToTotalRatio">0%</span> <span class="text-lg font-semibold text-gray-400">of total items owned</span></p>
+                    </div>
+                    <p id="wishlistMessage" class="mt-4 text-gray-400 text-sm"></p>
+                </div>
+                
+                <!-- Rarest Finds Card - Full width on mobile, separate on desktop -->
+                <div class="lg:col-span-2 p-6 rounded-2xl bg-gray-800 shadow-xl border border-gray-700">
+                    <h3 class="text-xl font-bold text-sky-300 mb-4">Longest Time Since Seen</h3>
+                    <ul id="rarestFindsList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Rarest finds items will be inserted here -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Popup Modal for Item Details -->
+    <div id="item-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden modal-overlay">
+        <div class="bg-gray-800 text-gray-200 p-6 rounded-xl shadow-xl max-w-lg w-full relative border-2 border-sky-400">
+            <div class="absolute top-3 right-3 flex items-center space-x-2">
+                 <!-- Wishlist button in modal -->
+                <button id="modal-wishlist-btn" class="p-1 rounded-full text-gray-400 hover:text-red-400 transition-colors duration-200">
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5A5.4 5.4 0 017.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3A5.4 5.4 0 0122 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                    </svg>
+                </button>
+                <button id="close-modal" class="text-gray-400 hover:text-white transition-colors duration-200">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="flex flex-col items-center text-center">
+                <img id="modal-image" src="" onerror="this.onerror=null;this.src='https://placehold.co/128x128/2d3748/a0aec0?text=No+Img'" alt="Item Thumbnail" class="w-32 h-32 rounded-lg object-contain bg-gray-900 mb-4 border-2 border-gray-700">
+                <h3 id="modal-title" class="text-3xl font-bold text-sky-300 mb-2"></h3>
+                <a id="modal-wiki-link" href="#" target="_blank" class="text-sm text-gray-400 hover:text-sky-300 transition-colors duration-200">View on Warframe Wiki</a>
+            </div>
+            
+            <div class="mt-6 border-t border-gray-700 pt-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-gray-400 font-semibold mb-1">Details:</p>
+                        <p class="text-lg mb-1"><span class="text-gray-300">Type:</span> <span id="modal-item-type" class="font-medium text-white"></span></p>
+                        <p class="text-lg mb-1"><span class="text-gray-300">Subtype:</span> <span id="modal-item-subtype" class="font-medium text-white"></span></p>
+                        
+                        <div class="mt-4 pt-4 border-t border-gray-600">
+                            <p class="text-gray-400 font-semibold mb-2">Owned:</p>
+                            <div class="flex items-center justify-between">
+                                <label class="flex items-center cursor-pointer space-x-2">
+                                    <input type="checkbox" id="modal-owned-checkbox" class="owned-checkbox peer sr-only">
+                                    <div class="relative w-5 h-5 rounded border-2 border-gray-500 bg-gray-800 flex items-center justify-center transition-all duration-200 peer-checked:bg-green-500 peer-checked:border-green-500">
+                                        <svg class="absolute w-4 h-4 text-white opacity-0 transition-opacity duration-200 peer-checked:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                    </div>
+                                    <span class="text-gray-300 font-semibold">Owned</span>
+                                </label>
+                                <div class="owned-input-group flex items-center space-x-2 text-gray-300">
+                                    <button id="modal-count-btn-minus" class="count-btn-minus text-white bg-gray-700 hover:bg-gray-600 p-1 rounded-full w-6 h-6 flex items-center justify-center transition-colors duration-200 disabled:opacity-50">-</button>
+                                    <input type="number" id="modal-count-input" min="0" value="0" class="count-input w-12 text-center text-white bg-gray-700 rounded-lg border-gray-600">
+                                    <button id="modal-count-btn-plus" class="count-btn-plus text-white bg-gray-700 hover:bg-gray-600 p-1 rounded-full w-6 h-6 flex items-center justify-center transition-colors duration-200">+</button>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                    <div>
+                        <p class="text-gray-400 font-semibold mb-1">Cost:</p>
+                        <p class="flex items-center mb-1">
+                            <img id="modal-credits-icon" src="" onerror="this.onerror=null;this.src='https://placehold.co/16x16/2d3748/a0aec0?text=C'" alt="Credits Icon" class="w-4 h-4 mr-2 inline-block">
+                            <span class="text-gray-300">Credits:</span> <span id="modal-credits" class="font-semibold text-white ml-1"></span>
+                        </p>
+                        <p class="flex items-center mb-1">
+                            <img id="modal-ducats-icon" src="" onerror="this.onerror=null;this.src='https://placehold.co/16x16/2d3748/a0aec0?text=D'" alt="Ducats Icon" class="w-4 h-4 mr-2 inline-block">
+                            <span class="text-gray-300">Ducats:</span> <span id="modal-ducats" class="font-semibold text-white ml-1"></span>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <p class="text-gray-400 font-semibold mb-2">Dates Seen:</p>
+                    <!-- Scrollable container for the dates list -->
+                    <div class="max-h-32 overflow-y-auto pr-2 rounded-md bg-gray-700/50 p-2 dates-scroll-container">
+                       <ul id="modal-dates-list" class="list-disc list-inside text-gray-300">
+                           <!-- Dates will be populated here -->
+                       </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Configuration ---
+            const dataUrl = 'https://raw.githubusercontent.com/erez252/warframe-baro-history/refs/heads/main/data/warframe_data.json';
+            const baroStatusApiUrl = 'https://api.warframestat.us/pc/voidTrader/';
+            const creditsIconUrl = 'https://wiki.warframe.com/images/thumb/Credits.png/32px-Credits.png?a6ad7';
+            const ducatsIconUrl = 'https://wiki.warframe.com/images/thumb/OrokinDucats.png/32px-OrokinDucats.png?23930';
+            const localStorageOwnedKey = 'baro-owned-items';
+            const localStorageWishlistKey = 'baro-wishlist-items'; 
+
+            // --- DOM Elements ---
+            const loadingIndicator = document.getElementById('loading');
+            const controlsSection = document.getElementById('controls');
+            const itemsGrid = document.getElementById('items-grid');
+            const statsContainer = document.getElementById('statsContainer');
+            const sortButtons = document.querySelectorAll('.sort-btn');
+            const itemTypeFiltersContainer = document.getElementById('itemTypeFiltersContainer');
+            const itemSubTypeFiltersContainer = document.getElementById('itemSubTypeFiltersContainer');
+            const advancedFilterToggle = document.getElementById('advancedFilterToggle');
+            const advancedFiltersMenu = document.getElementById('advancedFiltersMenu');
+            const toggleIcon = document.getElementById('toggleIcon');
+            const selectAllTypesBtn = document.getElementById('selectAllTypes');
+            const selectNoneTypesBtn = document.getElementById('selectNoneTypes');
+            const resetTypesBtn = document.getElementById('resetTypes');
+            const selectAllSubtypesBtn = document.getElementById('selectAllSubtypes');
+            const selectNoneSubtypesBtn = document.getElementById('selectNoneSubtypes');
+            const itemModal = document.getElementById('item-modal');
+            const closeModalButton = document.getElementById('close-modal');
+            const groupRadios = document.querySelectorAll('input[name="group-by"]');
+            const searchBar = document.getElementById('search-bar');
+            
+            const showOwnedItemsFilter = document.getElementById('showOwnedItemsFilter');
+            const showUnownedItemsFilter = document.getElementById('showUnownedItemsFilter');
+            const showWishlistItemsFilter = document.getElementById('showWishlistItemsFilter');
+            
+            // NEW COLLAPSIBLE CONTROLS
+            const filterToggle = document.getElementById('filterToggle');
+            const filterMenu = document.getElementById('filterMenu');
+            const filterToggleIcon = document.getElementById('filterToggleIcon');
+            const groupToggle = document.getElementById('groupToggle');
+            const groupMenu = document.getElementById('groupMenu');
+            const groupToggleIcon = document.getElementById('groupToggleIcon');
+            
+            // Modal Elements
+            const modalImage = document.getElementById('modal-image');
+            const modalTitle = document.getElementById('modal-title');
+            const modalWikiLink = document.getElementById('modal-wiki-link');
+            const modalItemType = document.getElementById('modal-item-type');
+            const modalItemSubtype = document.getElementById('modal-item-subtype');
+            const modalCredits = document.getElementById('modal-credits');
+            const modalDucats = document.getElementById('modal-ducats');
+            const modalDatesList = document.getElementById('modal-dates-list');
+            const modalCreditsIcon = document.getElementById('modal-credits-icon');
+            const modalDucatsIcon = document.getElementById('modal-ducats-icon');
+            const modalOwnedCheckbox = document.getElementById('modal-owned-checkbox');
+            const modalCountMinus = document.getElementById('modal-count-btn-minus');
+            const modalCountInput = document.getElementById('modal-count-input');
+            const modalCountPlus = document.getElementById('modal-count-plus');
+            const modalWishlistBtn = document.getElementById('modal-wishlist-btn');
+            
+            const messageBox = document.getElementById('message-box');
+            const closeMessageButton = document.getElementById('close-message');
+            
+            // NEW STATS ELEMENTS
+            const toggleStatsBtn = document.getElementById('toggleStatsBtn');
+            const backToInventoryBtn = document.getElementById('backToInventoryBtn');
+            const totalDucatsSpan = document.getElementById('totalDucats');
+            const totalCreditsSpan = document.getElementById('totalCredits');
+            const totalOwnedItemsSpan = document.getElementById('totalOwnedItems');
+            const totalUniqueItemsSpan = document.getElementById('totalUniqueItems'); 
+            const itemBreakdownList = document.getElementById('itemBreakdownList');
+            const totalProgressSpan = document.getElementById('totalProgress');
+            const progressBreakdownList = document.getElementById('progressBreakdownList');
+            const rarestFindsList = document.getElementById('rarestFindsList');
+            const totalProgressBar = document.getElementById('totalProgressBar');
+            const totalWishlistItemsSpan = document.getElementById('totalWishlistItems');
+            const ownedToTotalRatioSpan = document.getElementById('ownedToTotalRatio'); 
+            const wishlistMessage = document.getElementById('wishlistMessage');
+            
+            // NEW BARO STATUS ELEMENT
+            const baroStatusDiv = document.getElementById('baro-status');
+
+            // --- State Variables ---
+            let allData = [];
+            let userOwnedItems = {}; 
+            let userWishlist = {}; 
+            const defaultTypeFilters = new Set(['Mod', 'Weapon', 'Sentinel', 'Void Relic']);
+            let currentSort = { key: 'lastSeen', direction: 'desc' };
+            let activeTypeFilters = new Set();
+            let activeSubTypeFilters = new Set();
+            let allSubTypes = new Set();
+            let isAdvancedMenuOpen = false;
+            let currentGrouping = 'none';
+            let isShowOwnedItemsFilterActive = true;
+            let isShowUnownedItemsFilterActive = true;
+            let isShowWishlistItemsFilterActive = true;
+            let currentModalItem = null;
+            let searchQuery = '';
+            let countdownInterval = null;
+
+
+            // --- Utility Functions ---
+            const showMessage = (message) => {
+                const messageText = document.getElementById('message-text');
+                if (messageText && messageBox) {
+                    messageText.textContent = message;
+                    messageBox.classList.remove('hidden');
+                }
+            };
+
+            const hideMessage = () => {
+                if (messageBox) {
+                    messageBox.classList.add('hidden');
+                }
+            };
+
+            // Format a UTC date string to a readable format
+            const formatDate = (dateString) => {
+                const options = { year: 'numeric', month: 'long', day: 'numeric' };
+                return new Date(dateString).toLocaleDateString('en-US', options);
+            };
+
+            // Get the last seen date from the array of dates
+            const getLastSeen = (dates) => {
+                if (!dates || dates.length === 0) return null;
+                // Dates are already sorted newest to oldest in the data
+                return dates[0];
+            };
+            
+            // Creates the HTML for a single item card
+            const createItemCard = (item) => {
+                const lastSeenDate = getLastSeen(item.dates);
+                const lastSeenFormatted = lastSeenDate ? formatDate(lastSeenDate) : 'Unknown';
+                const isOwned = !!userOwnedItems[item.itemName];
+                const isWishlisted = !!userWishlist[item.itemName];
+                const ownedCount = userOwnedItems[item.itemName]?.count || 0;
+                
+                const isTrackable = true;
+
+                const card = document.createElement('div');
+                let cardClasses = `item-card p-6 rounded-xl shadow-lg border-2 border-gray-700 transition-all duration-200`;
+                if (isOwned) cardClasses += ' owned';
+                if (isWishlisted) cardClasses += ' wishlisted';
+                card.className = cardClasses;
+                card.dataset.itemName = item.itemName;
+
+                card.innerHTML = `
+                    <div class="details-trigger-new">
+                        <div class="flex items-start justify-between">
+                            <div class="flex items-center space-x-4 mb-4">
+                                <img src="${item.wikiThumbnail}" onerror="this.onerror=null;this.src='https://placehold.co/64x64/2d3748/a0aec0?text=No+Img'" alt="${item.itemName} thumbnail" class="w-16 h-16 rounded-lg object-contain bg-gray-800">
+                                <div>
+                                    <h3 class="text-xl font-bold text-sky-300">${item.itemName}</h3>
+                                    <p class="text-gray-400 text-sm">Type: <span class="font-medium">${item.itemType ?? 'Unknown'}</span></p>
+                                </div>
+                            </div>
+                            <button class="wishlist-btn p-1 rounded-full text-gray-400 hover:text-red-400 transition-colors duration-200" data-item-name="${item.itemName}">
+                                <svg class="w-6 h-6 ${isWishlisted ? 'text-red-400' : ''}" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5A5.4 5.4 0 017.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3A5.4 5.4 0 0122 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="border-t border-gray-600 pt-4">
+                            <p class="flex items-center text-gray-300 mb-2">
+                                <img src="${creditsIconUrl}" onerror="this.onerror=null;this.src='https://placehold.co/16x16/2d3748/a0aec0?text=C'" alt="Credits Icon" class="w-4 h-4 mr-2 inline-block">
+                                Credits: <span class="font-semibold text-white ml-1">${(item.credits ?? 0).toLocaleString()}</span>
+                            </p>
+                            <p class="flex items-center text-gray-300 mb-2">
+                                <img src="${ducatsIconUrl}" onerror="this.onerror=null;this.src='https://placehold.co/16x16/2d3748/a0aec0?text=D'" alt="Ducats Icon" class="w-4 h-4 mr-2 inline-block">
+                                Ducats: <span class="font-semibold text-white ml-1">${(item.ducats ?? 0).toLocaleString()}</span>
+                            </p>
+                            <p class="text-gray-300">Last Seen: <span class="font-medium text-white">${lastSeenFormatted}</span></p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-4 border-t border-gray-600">
+                        <div class="flex items-center justify-between">
+                            <label class="owned-toggle-label flex items-center cursor-pointer space-x-2">
+                                <input type="checkbox" class="owned-checkbox peer sr-only" ${isOwned ? 'checked' : ''}>
+                                <div class="relative w-5 h-5 rounded border-2 border-gray-500 bg-gray-800 flex items-center justify-center transition-all duration-200 peer-checked:bg-green-500 peer-checked:border-green-500">
+                                    <svg class="absolute w-4 h-4 text-white opacity-0 transition-opacity duration-200 peer-checked:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                </div>
+                                <span class="text-gray-300 font-semibold">Owned</span>
+                            </label>
+                            ${isTrackable ? `
+                                <div class="owned-input-group flex items-center space-x-2 text-gray-300">
+                                    <button class="count-btn-minus text-white bg-gray-700 hover:bg-gray-600 p-1 rounded-full w-6 h-6 flex items-center justify-center transition-colors duration-200 disabled:opacity-50" ${ownedCount <= 0 ? 'disabled' : ''}>-</button>
+                                    <input type="number" min="0" value="${ownedCount}" class="count-input w-12 text-center text-white bg-gray-700 rounded-lg border-gray-600">
+                                    <button class="count-btn-plus text-white bg-gray-700 hover:bg-gray-600 p-1 rounded-full w-6 h-6 flex items-center justify-center transition-colors duration-200">+</button>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+                
+                return card;
+            }
+
+            // Show the item details modal
+            const showItemDetails = (item) => {
+                currentModalItem = item;
+                const ownedItem = userOwnedItems[item.itemName];
+                const ownedCount = ownedItem?.count || 0;
+                const isOwned = !!ownedItem;
+                const isWishlisted = !!userWishlist[item.itemName];
+                
+                if (modalImage && modalTitle && modalWikiLink && modalItemType && modalItemSubtype && modalCredits && modalDucats && modalDatesList && itemModal && modalCreditsIcon && modalDucatsIcon) {
+                    modalImage.src = item.wikiThumbnail;
+                    modalImage.onerror = () => modalImage.src = 'https://placehold.co/128x128/2d3748/a0aec0?text=No+Img';
+                    modalTitle.textContent = item.itemName;
+                    modalWikiLink.href = item.wikiURL;
+                    modalItemType.textContent = item.itemType ?? 'Unknown';
+                    modalItemSubtype.textContent = item.itemSubType ?? 'None';
+                    modalCredits.textContent = (item.credits ?? 0).toLocaleString();
+                    modalDucats.textContent = (item.ducats ?? 0).toLocaleString();
+                    
+                    // Correctly set the image sources dynamically
+                    modalCreditsIcon.src = creditsIconUrl;
+                    modalDucatsIcon.src = ducatsIconUrl;
+                    
+                    // Populate the new owned controls in the modal
+                    if (modalOwnedCheckbox) {
+                        modalOwnedCheckbox.checked = isOwned;
+                    }
+                    if (modalCountInput) {
+                        modalCountInput.value = ownedCount;
+                    }
+                    if (modalCountMinus) {
+                        modalCountMinus.disabled = ownedCount <= 0;
+                    }
+                    
+                    // Update wishlist button state in modal
+                    if (modalWishlistBtn) {
+                        if (isWishlisted) {
+                            modalWishlistBtn.classList.add('text-red-400');
+                        } else {
+                            modalWishlistBtn.classList.remove('text-red-400');
+                        }
+                    }
+
+                    modalDatesList.innerHTML = '';
+                    if (item.dates && item.dates.length > 0) {
+                        item.dates.forEach(dateString => {
+                            const li = document.createElement('li');
+                            li.textContent = formatDate(dateString);
+                            modalDatesList.appendChild(li);
+                        });
+                    } else {
+                        const li = document.createElement('li');
+                        li.textContent = 'No dates found.';
+                        modalDatesList.appendChild(li);
+                    }
+
+                    itemModal.classList.remove('hidden');
+                }
+            };
+
+            // Hide the item details modal
+            const hideItemDetails = () => {
+                if (itemModal) {
+                    itemModal.classList.add('hidden');
+                }
+            };
+            
+            // Render the items to the page
+            const renderItems = (items) => {
+                if (!itemsGrid) return;
+                itemsGrid.innerHTML = ''; // Clear previous items
+
+                if (items.length === 0) {
+                    itemsGrid.innerHTML = '<p class="col-span-full text-center text-gray-400 text-lg">No items found matching the filters.</p>';
+                    return;
+                }
+
+                if (currentGrouping === 'none') {
+                    // Render as a single flat list
+                    itemsGrid.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-8'; // Added mt-8 here
+                    items.forEach(item => {
+                        const card = createItemCard(item);
+                        attachCardListeners(card, item);
+                        itemsGrid.appendChild(card);
+                    });
+                } else {
+                    itemsGrid.className = 'mt-8'; // Added mt-8 here
+                    const groupedData = items.reduce((acc, item) => {
+                        let groupKey;
+                        if (currentGrouping === 'lastSeen') {
+                            groupKey = getLastSeen(item.dates);
+                            if (groupKey) groupKey = formatDate(groupKey);
+                        } else if (currentGrouping === 'itemType') {
+                            groupKey = item.itemType ?? 'Other';
+                        }
+
+                        if (!acc[groupKey]) {
+                            acc[groupKey] = [];
+                        }
+                        acc[groupKey].push(item);
+                        return acc;
+                    }, {});
+
+                    // Sort the group keys for consistent rendering
+                    const sortedGroupKeys = Object.keys(groupedData).sort((a,b) => {
+                        if (currentGrouping === 'lastSeen') {
+                            // Sort dates descending
+                            return new Date(b) - new Date(a);
+                        } else {
+                            // Sort strings alphabetically
+                            return a.localeCompare(b);
+                        }
+                    });
+
+                    sortedGroupKeys.forEach(groupKey => {
+                        const groupSection = document.createElement('div');
+                        groupSection.className = 'mb-8';
+
+                        const groupHeader = document.createElement('h2');
+                        groupHeader.className = 'text-2xl md:text-3xl font-bold mb-4 text-sky-400';
+                        groupHeader.textContent = groupKey;
+                        groupSection.appendChild(groupHeader);
+
+                        const groupItemsGrid = document.createElement('div');
+                        groupItemsGrid.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6';
+
+                        groupedData[groupKey].forEach(item => {
+                            const card = createItemCard(item);
+                            attachCardListeners(card, item);
+                            groupItemsGrid.appendChild(card);
+                        });
+
+                        groupSection.appendChild(groupItemsGrid);
+                        itemsGrid.appendChild(groupSection);
+                    });
+                }
+            };
+            
+            /**
+             * Attaches specific event listeners to each interactive part of a card.
+             */
+            const attachCardListeners = (card, item) => {
+                // Attach listener to the new 'details-trigger-new' section ONLY
+                const detailsTrigger = card.querySelector('.details-trigger-new');
+                if (detailsTrigger) {
+                    detailsTrigger.addEventListener('click', (e) => {
+                        showItemDetails(item);
+                    });
+                }
+                
+                // Attach listener to the wishlist button
+                const wishlistBtn = card.querySelector('.wishlist-btn');
+                if (wishlistBtn) {
+                    wishlistBtn.addEventListener('click', (e) => {
+                        handleWishlistToggle(item.itemName);
+                        // Prevent the click from bubbling up and triggering the parent 'details-trigger-new'
+                        e.stopPropagation();
+                    });
+                }
+                
+                // Attach listeners to the owned status controls
+                const ownedToggle = card.querySelector('.owned-toggle-label');
+                const ownedCheckbox = ownedToggle?.querySelector('.owned-checkbox');
+                if (ownedCheckbox) {
+                    ownedCheckbox.addEventListener('change', (e) => {
+                        handleOwnedToggle(item.itemName, e.target.checked);
+                    });
+                }
+                
+                const minusBtn = card.querySelector('.count-btn-minus');
+                if (minusBtn) {
+                    minusBtn.addEventListener('click', (e) => {
+                        handleCountChange(item.itemName, -1);
+                        e.stopPropagation();
+                    });
+                }
+
+                const plusBtn = card.querySelector('.count-btn-plus');
+                if (plusBtn) {
+                    plusBtn.addEventListener('click', (e) => {
+                        handleCountChange(item.itemName, 1);
+                        e.stopPropagation();
+                    });
+                }
+                
+                const countInput = card.querySelector('.count-input');
+                if (countInput) {
+                    countInput.addEventListener('change', (e) => {
+                        const ownedCount = userOwnedItems[item.itemName]?.count || 0;
+                        handleCountChange(item.itemName, e.target.value - ownedCount, e.target.value);
+                    });
+                }
+            };
+
+
+            // Filter and sort the data based on current state
+            const filterAndSortData = () => {
+                let filteredData = [...allData];
+
+                // Filter by search query first
+                const query = searchQuery.toLowerCase();
+                if (query) {
+                    filteredData = filteredData.filter(item => 
+                        item.itemName.toLowerCase().includes(query) ||
+                        (item.itemType && item.itemType.toLowerCase().includes(query)) ||
+                        (item.itemSubType && item.itemSubType.toLowerCase().includes(query))
+                    );
+                }
+
+                // Filter by main itemType
+                filteredData = filteredData.filter(item => activeTypeFilters.has(item.itemType));
+                
+                // Then filter by itemSubType
+                filteredData = filteredData.filter(item => {
+                    if (!item.itemSubType) {
+                        return true;
+                    }
+                    return activeSubTypeFilters.has(item.itemSubType);
+                });
+                
+                // Filter by owned/unowned/wishlist status
+                filteredData = filteredData.filter(item => {
+                    const isOwned = !!userOwnedItems[item.itemName];
+                    const isWishlisted = !!userWishlist[item.itemName];
+                    
+                    const showIfOwned = isOwned && isShowOwnedItemsFilterActive;
+                    const showIfWishlisted = isWishlisted && isShowWishlistItemsFilterActive;
+                    const showIfUnownedAndNotWishlisted = !isOwned && !isWishlisted && isShowUnownedItemsFilterActive;
+                    
+                    if (isOwned && isWishlisted) {
+                         return isShowOwnedItemsFilterActive || isShowWishlistItemsFilterActive;
+                    } else if (isOwned) {
+                        return showIfOwned;
+                    } else if (isWishlisted) {
+                        return showIfWishlisted;
+                    } else {
+                        return showIfUnownedAndNotWishlisted;
+                    }
+                });
+
+                // Sort the data
+                filteredData.sort((a, b) => {
+                    let aValue, bValue;
+                    
+                    switch (currentSort.key) {
+                        case 'lastSeen':
+                            aValue = getLastSeen(a.dates);
+                            bValue = getLastSeen(b.dates);
+                            if (!aValue) return 1;
+                            if (!bValue) return -1;
+                            return (new Date(bValue) - new Date(aValue)) * (currentSort.direction === 'asc' ? -1 : 1);
+                        case 'itemName':
+                            aValue = a.itemName.toLowerCase();
+                            bValue = b.itemName.toLowerCase();
+                            return aValue.localeCompare(bValue) * (currentSort.direction === 'asc' ? 1 : -1);
+                        case 'credits':
+                            aValue = a.credits;
+                            bValue = b.credits;
+                            return (aValue - bValue) * (currentSort.direction === 'asc' ? 1 : -1);
+                        case 'ducats':
+                            aValue = a.ducats;
+                            bValue = b.ducats;
+                            return (aValue - bValue) * (currentSort.direction === 'asc' ? 1 : -1);
+                        default:
+                            return 0;
+                    }
+                });
+                
+                // Update sort icons
+                sortButtons.forEach(btn => {
+                    const iconSpan = btn.querySelector('.sort-icon');
+                    if (iconSpan) {
+                        if (btn.dataset.sortKey === currentSort.key) {
+                            iconSpan.textContent = currentSort.direction === 'asc' ? '↑' : '↓';
+                        } else {
+                            iconSpan.textContent = '';
+                        }
+                    }
+                });
+                
+                // Only render if we're on the inventory view
+                if (statsContainer.classList.contains('hidden')) {
+                     renderItems(filteredData);
+                }
+            };
+            
+            // --- Local Storage Functions ---
+            const saveOwnedItems = () => {
+                try {
+                    localStorage.setItem(localStorageOwnedKey, JSON.stringify(userOwnedItems));
+                } catch (e) {
+                    console.error('Could not save owned items to local storage', e);
+                    showMessage('Warning: Failed to save owned items. Local storage may be full or disabled.');
+                }
+            };
+            
+            const saveWishlist = () => {
+                try {
+                    localStorage.setItem(localStorageWishlistKey, JSON.stringify(userWishlist));
+                } catch (e) {
+                    console.error('Could not save wishlist to local storage', e);
+                    showMessage('Warning: Failed to save wishlist. Local storage may be full or disabled.');
+                }
+            };
+
+            const loadOwnedItems = () => {
+                try {
+                    const savedData = localStorage.getItem(localStorageOwnedKey);
+                    if (savedData) {
+                        const parsedData = JSON.parse(savedData);
+                        if (parsedData && typeof parsedData === 'object') {
+                            userOwnedItems = parsedData;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Could not load owned items from local storage', e);
+                }
+            };
+            
+            const loadWishlist = () => {
+                try {
+                    const savedData = localStorage.getItem(localStorageWishlistKey);
+                    if (savedData) {
+                        const parsedData = JSON.parse(savedData);
+                        if (parsedData && typeof parsedData === 'object') {
+                            userWishlist = parsedData;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Could not load wishlist from local storage', e);
+                }
+            };
+            
+            // --- Owned Items Functions ---
+            const handleOwnedToggle = (itemName, isOwned) => {
+                if (isOwned) {
+                    userOwnedItems[itemName] = { owned: true, count: 1 };
+                } else {
+                    delete userOwnedItems[itemName];
+                }
+                saveOwnedItems();
+                filterAndSortData();
+                calculateAndDisplayStats();
+                if (currentModalItem && currentModalItem.itemName === itemName) {
+                     showItemDetails(currentModalItem); 
+                }
+            };
+
+            const handleCountChange = (itemName, change, explicitValue = null) => {
+                if (!userOwnedItems[itemName]) {
+                    handleOwnedToggle(itemName, true);
+                    return;
+                }
+                
+                let newCount;
+                if (explicitValue !== null) {
+                    newCount = Math.max(0, parseInt(explicitValue) || 0);
+                } else {
+                    newCount = Math.max(0, userOwnedItems[itemName].count + change);
+                }
+
+                if (newCount === 0) {
+                    delete userOwnedItems[itemName];
+                } else {
+                    userOwnedItems[itemName].count = newCount;
+                }
+                saveOwnedItems();
+                filterAndSortData();
+                calculateAndDisplayStats();
+                if (currentModalItem && currentModalItem.itemName === itemName) {
+                    showItemDetails(currentModalItem); 
+                }
+            };
+            
+            // NEW: Wishlist Functions
+            const handleWishlistToggle = (itemName) => {
+                if (userWishlist[itemName]) {
+                    delete userWishlist[itemName];
+                } else {
+                    userWishlist[itemName] = true;
+                }
+                saveWishlist();
+                filterAndSortData();
+                calculateAndDisplayStats();
+                if (currentModalItem && currentModalItem.itemName === itemName) {
+                     showItemDetails(currentModalItem); 
+                }
+            };
+
+
+            // --- Event Handlers ---
+            const handleSortClick = (e) => {
+                const newSortKey = e.currentTarget.dataset.sortKey;
+                
+                if (currentSort.key === newSortKey) {
+                    currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    currentSort.key = newSortKey;
+                    if (newSortKey === 'lastSeen' || newSortKey === 'credits' || newSortKey === 'ducats') {
+                        currentSort.direction = 'desc';
+                    } else {
+                        currentSort.direction = 'asc';
+                    }
+                }
+                filterAndSortData();
+            };
+            
+            const handleSearchInput = (e) => {
+                searchQuery = e.target.value;
+                filterAndSortData();
+            };
+
+            const handleTypeFilterChange = (e) => {
+                const { value, checked } = e.target;
+                if (checked) {
+                    activeTypeFilters.add(value);
+                } else {
+                    activeTypeFilters.delete(value);
+                }
+                filterAndSortData();
+            };
+            
+            const handleSubTypeFilterChange = (e) => {
+                const { value, checked } = e.target;
+                if (checked) {
+                    activeSubTypeFilters.add(value);
+                } else {
+                    activeSubTypeFilters.delete(value);
+                }
+                filterAndSortData();
+            };
+
+            const handleGroupChange = (e) => {
+                currentGrouping = e.target.value;
+                filterAndSortData();
+            };
+            
+            const toggleFilterMenu = () => {
+                const isOpen = !filterMenu.classList.contains('hidden');
+                filterMenu.classList.toggle('hidden', isOpen);
+                filterToggleIcon.textContent = isOpen ? '▼' : '▲';
+            };
+
+            const toggleGroupMenu = () => {
+                const isOpen = !groupMenu.classList.contains('hidden');
+                groupMenu.classList.toggle('hidden', isOpen);
+                groupToggleIcon.textContent = isOpen ? '▼' : '▲';
+            };
+            
+            const toggleAdvancedMenu = () => {
+                isAdvancedMenuOpen = !isAdvancedMenuOpen;
+                if (advancedFiltersMenu && toggleIcon) {
+                    if (isAdvancedMenuOpen) {
+                        advancedFiltersMenu.classList.remove('hidden');
+                        toggleIcon.textContent = '▲';
+                    } else {
+                        advancedFiltersMenu.classList.add('hidden');
+                        toggleIcon.textContent = '▼';
+                    }
+                }
+            };
+            
+            const handleSelectAllTypes = () => {
+                const checkboxes = document.querySelectorAll('#itemTypeFiltersContainer input[type="checkbox"]');
+                checkboxes.forEach(cb => cb.checked = true);
+                activeTypeFilters.clear();
+                checkboxes.forEach(cb => activeTypeFilters.add(cb.value));
+                filterAndSortData();
+            };
+
+            const handleSelectNoneTypes = () => {
+                const checkboxes = document.querySelectorAll('#itemTypeFiltersContainer input[type="checkbox"]');
+                checkboxes.forEach(cb => cb.checked = false);
+                activeTypeFilters.clear();
+                filterAndSortData();
+            };
+
+            const handleResetTypes = () => {
+                const checkboxes = document.querySelectorAll('#itemTypeFiltersContainer input[type="checkbox"]');
+                activeTypeFilters = new Set(defaultTypeFilters);
+                checkboxes.forEach(cb => {
+                    cb.checked = defaultTypeFilters.has(cb.value);
+                });
+                filterAndSortData();
+            };
+
+            const handleSelectAllSubtypes = () => {
+                const checkboxes = document.querySelectorAll('#itemSubTypeFiltersContainer input[type="checkbox"]');
+                checkboxes.forEach(cb => cb.checked = true);
+                activeSubTypeFilters.clear();
+                checkboxes.forEach(cb => activeSubTypeFilters.add(cb.value));
+                filterAndSortData();
+            };
+
+            const handleSelectNoneSubtypes = () => {
+                const checkboxes = document.querySelectorAll('#itemSubTypeFiltersContainer input[type="checkbox"]');
+                checkboxes.forEach(cb => cb.checked = false);
+                activeSubTypeFilters.clear();
+                filterAndSortData();
+            };
+
+            const handleShowOwnedItemsFilter = (e) => {
+                isShowOwnedItemsFilterActive = e.target.checked;
+                filterAndSortData();
+            };
+            
+            const handleShowUnownedItemsFilter = (e) => {
+                isShowUnownedItemsFilterActive = e.target.checked;
+                filterAndSortData();
+            };
+
+            // Handler for the wishlist filter checkbox
+            const handleShowWishlistItemsFilter = (e) => {
+                isShowWishlistItemsFilterActive = e.target.checked;
+                filterAndSortData();
+            };
+
+
+            // --- NEW STATS FUNCTIONALITY ---
+            /**
+             * Calculates and displays all the stats for the owned items.
+             */
+            const calculateAndDisplayStats = () => {
+                calculateTotalValue();
+                calculateItemBreakdown();
+                calculateCollectionProgress();
+                findRarestItems();
+                calculateWishlistStats();
+            };
+
+            /**
+             * Calculates and displays the total ducat and credit value of owned items.
+             */
+            const calculateTotalValue = () => {
+                let totalDucats = 0;
+                let totalCredits = 0;
+                
+                for (const itemName in userOwnedItems) {
+                    const item = allData.find(i => i.itemName === itemName);
+                    if (item) {
+                        totalDucats += (item.ducats || 0) * userOwnedItems[itemName].count;
+                        totalCredits += (item.credits || 0) * userOwnedItems[itemName].count;
+                    }
+                }
+                totalDucatsSpan.textContent = totalDucats.toLocaleString();
+                totalCreditsSpan.textContent = totalCredits.toLocaleString();
+            };
+
+            /**
+             * Calculates and displays a breakdown of owned items by type.
+             */
+            const calculateItemBreakdown = () => {
+                const ownedItemTypes = {};
+                let totalOwned = 0;
+                
+                for (const itemName in userOwnedItems) {
+                    const item = allData.find(i => i.itemName === itemName);
+                    if (item) {
+                        const type = item.itemType || 'Unknown';
+                        ownedItemTypes[type] = (ownedItemTypes[type] || 0) + userOwnedItems[itemName].count;
+                        totalOwned += userOwnedItems[itemName].count;
+                    }
+                }
+                
+                totalOwnedItemsSpan.textContent = totalOwned;
+                totalUniqueItemsSpan.textContent = Object.keys(userOwnedItems).length;
+                itemBreakdownList.innerHTML = '';
+                const sortedTypes = Object.keys(ownedItemTypes).sort();
+                sortedTypes.forEach(type => {
+                    const li = document.createElement('li');
+                    li.textContent = `${type}: ${ownedItemTypes[type]}`;
+                    itemBreakdownList.appendChild(li);
+                });
+            };
+
+            /**
+             * Calculates and displays the collection progress percentage.
+             */
+            const calculateCollectionProgress = () => {
+                const allItemsByType = allData.reduce((acc, item) => {
+                    const type = item.itemType || 'Unknown';
+                    acc[type] = (acc[type] || 0) + 1;
+                    return acc;
+                }, {});
+
+                progressBreakdownList.innerHTML = '';
+                let ownedUniqueItems = Object.keys(userOwnedItems).length;
+                let totalUniqueItems = allData.length;
+
+                const totalProgress = totalUniqueItems > 0 ? ((ownedUniqueItems / totalUniqueItems) * 100).toFixed(1) : 0;
+                totalProgressSpan.textContent = `${totalProgress}%`;
+                totalProgressBar.style.width = `${totalProgress}%`;
+
+                for (const type in allItemsByType) {
+                    const ownedOfType = allData.filter(item => item.itemType === type && userOwnedItems[item.itemName]).length;
+                    const totalOfType = allItemsByType[type];
+                    const progressOfType = totalOfType > 0 ? ((ownedOfType / totalOfType) * 100).toFixed(1) : 0;
+
+                    const li = document.createElement('li');
+                    li.className = "flex items-center justify-between text-white text-sm";
+                    li.innerHTML = `
+                        <span>${type}:</span>
+                        <span class="font-bold">${progressOfType}%</span>
+                    `;
+                    progressBreakdownList.appendChild(li);
+                }
+            };
+            
+            // NEW: Calculates and displays wishlist stats
+            const calculateWishlistStats = () => {
+                const totalUniqueOwned = Object.keys(userOwnedItems).length;
+                const totalUniqueItems = allData.length;
+                
+                // NEW LOGIC: Only count wishlisted items that are NOT owned
+                const wishlistedItemsToGet = allData.filter(item => userWishlist[item.itemName] && !userOwnedItems[item.itemName]);
+                
+                const ownedToTotalRatio = totalUniqueItems > 0 ? ((totalUniqueOwned / totalUniqueItems) * 100).toFixed(1) : 0;
+
+                totalWishlistItemsSpan.textContent = wishlistedItemsToGet.length;
+                ownedToTotalRatioSpan.textContent = `${ownedToTotalRatio}%`;
+
+                if (wishlistedItemsToGet.length === 0) {
+                    wishlistMessage.textContent = "Your wishlist is empty, or you own all wishlisted items!";
+                } else {
+                    wishlistMessage.textContent = `You have ${wishlistedItemsToGet.length} items on your wishlist that you don't yet own.`;
+                }
+            };
+
+            /**
+             * Finds and displays items with the longest time since last sold.
+             */
+            const findRarestItems = () => {
+                const now = new Date();
+                const rarestOwnedItems = allData
+                    .filter(item => userOwnedItems[item.itemName])
+                    .sort((a, b) => {
+                        const aLastSeen = getLastSeen(a.dates);
+                        const bLastSeen = getLastSeen(b.dates);
+                        if (!aLastSeen) return 1;
+                        if (!bLastSeen) return -1;
+                        return new Date(aLastSeen) - new Date(bLastSeen);
+                    })
+                    .slice(0, 5); // Get the top 5 rarest (longest time)
+
+                rarestFindsList.innerHTML = '';
+                if (rarestOwnedItems.length > 0) {
+                    rarestOwnedItems.forEach(item => {
+                        const lastSeenTime = Math.floor((now - new Date(getLastSeen(item.dates))) / (1000 * 60 * 60 * 24));
+                        const li = document.createElement('li');
+                        li.className = "p-4 bg-gray-700/50 rounded-lg";
+                        li.innerHTML = `
+                            <h4 class="text-lg font-semibold text-white">${item.itemName}</h4>
+                            <p class="text-sm text-gray-400">${lastSeenTime} days since last seen</p>
+                        `;
+                        rarestFindsList.appendChild(li);
+                    });
+                } else {
+                    rarestFindsList.innerHTML = '<p class="text-center text-gray-400 col-span-full">No owned items to show rarest finds.</p>';
+                }
+            };
+
+            /**
+             * Toggles between the main inventory view and the stats view.
+             */
+            const toggleView = (showStats) => {
+                if (showStats) {
+                    itemsGrid.classList.add('hidden');
+                    controlsSection.classList.add('hidden');
+                    statsContainer.classList.remove('hidden');
+                    calculateAndDisplayStats(); // Update stats whenever the view is opened
+                } else {
+                    itemsGrid.classList.remove('hidden');
+                    controlsSection.classList.remove('hidden');
+                    statsContainer.classList.add('hidden');
+                }
+            };
+            
+            /**
+             * Fetches Baro's current status and displays it.
+             */
+            const fetchBaroStatus = async () => {
+                try {
+                    const response = await fetch(baroStatusApiUrl);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const status = await response.json();
+
+                    if (status.active) {
+                        // Baro is here!
+                        baroStatusDiv.className = "text-center p-4 rounded-xl shadow-lg mb-8 bg-gray-800 text-white font-bold text-2xl animate-pulse";
+                        baroStatusDiv.innerHTML = `Baro Ki'Teer is here at ${status.location}!`;
+                        if (countdownInterval) clearInterval(countdownInterval);
+                    } else {
+                        // Baro is not here, start a countdown
+                        baroStatusDiv.className = "text-center p-4 rounded-xl shadow-lg mb-8 bg-gray-800 text-white font-bold";
+                        const activationTime = new Date(status.activation);
+                        startCountdown(activationTime, status.location);
+                    }
+
+                } catch (error) {
+                    console.error("Failed to fetch Baro's status:", error);
+                    baroStatusDiv.className = "text-center p-4 rounded-xl shadow-lg mb-8 bg-red-800 text-white font-bold";
+                    baroStatusDiv.innerHTML = "Failed to load Baro Ki'Teer status.";
+                }
+            };
+
+            /**
+             * Starts a countdown timer to a specific date and time.
+             */
+            const startCountdown = (endTime, location) => {
+                if (countdownInterval) clearInterval(countdownInterval);
+                
+                const updateTimer = () => {
+                    const now = new Date().getTime();
+                    const distance = endTime - now;
+
+                    if (distance < 0) {
+                        clearInterval(countdownInterval);
+                        baroStatusDiv.innerHTML = "Baro Ki'Teer has arrived!";
+                        fetchBaroStatus(); // Re-fetch to confirm status
+                        return;
+                    }
+
+                    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+                    baroStatusDiv.innerHTML = `
+                        <p class="text-xl md:text-2xl text-sky-400">Baro Ki'Teer will arrive in...</p>
+                        <p class="text-3xl md:text-4xl mt-2">
+                            <span class="text-sky-300">${days}d</span> 
+                            <span class="text-sky-300">${hours}h</span> 
+                            <span class="text-sky-300">${minutes}m</span> 
+                            <span class="text-sky-300">${seconds}s</span>
+                        </p>
+                        <p class="text-lg md:text-xl mt-2 text-gray-400">at ${location}</p>
+                    `;
+                };
+
+                countdownInterval = setInterval(updateTimer, 1000);
+                updateTimer(); // Initial call to display immediately
+            };
+
+            // --- Initialization ---
+            const init = async () => {
+                try {
+                    // Fetch and display Baro's status immediately
+                    fetchBaroStatus();
+                    
+                    // Load the saved owned items and wishlist first
+                    loadOwnedItems();
+                    loadWishlist();
+                    
+                    const response = await fetch(dataUrl);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    allData = data.items;
+
+                    // Get all unique item types and subtypes
+                    const allItemTypes = new Set(allData.map(item => item.itemType));
+                    allSubTypes = new Set(allData.map(item => item.itemSubType).filter(Boolean));
+
+                    // Clear and populate all item type checkboxes dynamically
+                    if (itemTypeFiltersContainer) {
+                        itemTypeFiltersContainer.innerHTML = '';
+                        const sortedItemTypes = [...allItemTypes].sort();
+                        sortedItemTypes.forEach(type => {
+                            const label = document.createElement('label');
+                            label.className = 'cursor-pointer';
+                            const isChecked = defaultTypeFilters.has(type);
+                            label.innerHTML = `
+                                <input type="checkbox" name="itemType" value="${type}" ${isChecked ? 'checked' : ''} class="filter-checkbox hidden">
+                                <span class="inline-block py-1 px-3 rounded-full text-gray-300 bg-gray-600 transition-colors duration-200">${type}</span>
+                            `;
+                            itemTypeFiltersContainer.appendChild(label);
+                            if (isChecked) {
+                                activeTypeFilters.add(type);
+                            }
+                        });
+                    }
+
+                    // Clear and populate all subtype checkboxes dynamically
+                    if (itemSubTypeFiltersContainer) {
+                        itemSubTypeFiltersContainer.innerHTML = '';
+                        const sortedSubTypes = [...allSubTypes].sort();
+                        sortedSubTypes.forEach(subType => {
+                            const label = document.createElement('label');
+                            label.className = 'cursor-pointer';
+                            label.innerHTML = `
+                                <input type="checkbox" name="itemSubType" value="${subType}" checked class="filter-checkbox hidden">
+                                <span class="inline-block py-1 px-3 rounded-full text-gray-300 bg-gray-600 transition-colors duration-200">${subType}</span>
+                            `;
+                            itemSubTypeFiltersContainer.appendChild(label);
+                            activeSubTypeFilters.add(subType);
+                        });
+                    }
+
+
+                    // Add event listeners with null checks
+                    sortButtons.forEach(button => button.addEventListener('click', handleSortClick));
+                    if (searchBar) searchBar.addEventListener('input', handleSearchInput);
+                    if (itemTypeFiltersContainer) itemTypeFiltersContainer.addEventListener('change', handleTypeFilterChange);
+                    if (itemSubTypeFiltersContainer) itemSubTypeFiltersContainer.addEventListener('change', handleSubTypeFilterChange);
+                    if (advancedFilterToggle) advancedFilterToggle.addEventListener('click', toggleAdvancedMenu);
+                    if (selectAllTypesBtn) selectAllTypesBtn.addEventListener('click', handleSelectAllTypes);
+                    if (selectNoneTypesBtn) selectNoneTypesBtn.addEventListener('click', handleSelectNoneTypes);
+                    if (resetTypesBtn) resetTypesBtn.addEventListener('click', handleResetTypes);
+                    if (selectAllSubtypesBtn) selectAllSubtypesBtn.addEventListener('click', handleSelectAllSubtypes);
+                    if (selectNoneSubtypesBtn) selectNoneSubtypesBtn.addEventListener('click', handleSelectNoneSubtypes);
+                    if (closeMessageButton) closeMessageButton.addEventListener('click', hideMessage);
+                    if (showOwnedItemsFilter) showOwnedItemsFilter.addEventListener('change', handleShowOwnedItemsFilter);
+                    if (showUnownedItemsFilter) showUnownedItemsFilter.addEventListener('change', handleShowUnownedItemsFilter);
+                    if (showWishlistItemsFilter) showWishlistItemsFilter.addEventListener('change', handleShowWishlistItemsFilter);
+                    groupRadios.forEach(radio => radio.addEventListener('change', handleGroupChange));
+                    if (closeModalButton) closeModalButton.addEventListener('click', hideItemDetails);
+                    if (itemModal) {
+                        itemModal.addEventListener('click', (e) => {
+                            if (e.target === itemModal) {
+                                hideItemDetails();
+                            }
+                        });
+                    }
+                    
+                    // Add event listener for the new wishlist button in the modal
+                    if (modalWishlistBtn) {
+                         modalWishlistBtn.addEventListener('click', () => {
+                             if (currentModalItem) {
+                                 handleWishlistToggle(currentModalItem.itemName);
+                             }
+                         });
+                    }
+
+                    // Add event listeners to the new modal controls
+                    if (modalOwnedCheckbox) {
+                        modalOwnedCheckbox.addEventListener('change', () => {
+                            if (currentModalItem) {
+                                handleOwnedToggle(currentModalItem.itemName, modalOwnedCheckbox.checked);
+                            }
+                        });
+                    }
+                    if (modalCountMinus) {
+                        modalCountMinus.addEventListener('click', (e) => {
+                            if (currentModalItem) {
+                                handleCountChange(currentModalItem.itemName, -1);
+                            }
+                            e.stopPropagation(); // <-- Added this
+                        });
+                    }
+                    if (modalCountPlus) {
+                        modalCountPlus.addEventListener('click', (e) => {
+                            if (currentModalItem) {
+                                handleCountChange(currentModalItem.itemName, 1);
+                            }
+                            e.stopPropagation(); // <-- Added this
+                        });
+                    }
+                    if (modalCountInput) {
+                        modalCountInput.addEventListener('change', (e) => {
+                            if (currentModalItem) {
+                                const ownedCount = userOwnedItems[currentModalItem.itemName]?.count || 0;
+                                handleCountChange(currentModalItem.itemName, e.target.value - ownedCount, e.target.value);
+                            }
+                        });
+                    }
+
+                    // NEW COLLAPSIBLE LISTENERS
+                    if(filterToggle) filterToggle.addEventListener('click', toggleFilterMenu);
+                    if(groupToggle) groupToggle.addEventListener('click', toggleGroupMenu);
+
+                    // NEW STATS LISTENERS
+                    if (toggleStatsBtn) {
+                        toggleStatsBtn.addEventListener('click', () => toggleView(true));
+                    }
+                    if (backToInventoryBtn) {
+                         backToInventoryBtn.addEventListener('click', () => toggleView(false));
+                    }
+                    
+                    // Hide loading, show controls, and render initial data
+                    if (loadingIndicator) loadingIndicator.classList.add('hidden');
+                    if (controlsSection) controlsSection.classList.remove('hidden');
+                    filterAndSortData();
+                } catch (error) {
+                    console.error('Failed to fetch data:', error);
+                    if (loadingIndicator) loadingIndicator.classList.add('hidden');
+                    showMessage('Failed to load data. Please check the network connection or the data source.');
+                }
+            };
+            
+            init();
+        });
+    </script>
+
+    <!-- New Footer -->
+    <footer class="mt-8">
+        <div class="text-center p-4 text-sm text-gray-500">
+            <p>This project was mostly "vibe coded" using Google AI <a href="https://gemini.google.com/app" target="_blank" class="text-sky-400 hover:text-sky-300 font-semibold transition-colors duration-200">Gemini</a>.</p>
+        </div>
+    </footer>
+</body>
+</html>
